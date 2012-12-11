@@ -1,0 +1,211 @@
+////////////////////////////////////////////////////////////////////////////
+// 
+// File: diffuse.txt
+// 
+// Author: Frank Luna (C) All Rights Reserved
+//
+// System: AMD Athlon 1800+ XP, 512 DDR, Geforce 3, Windows XP, MSVC++ 7.0 
+//
+// Desc: Vertex shader that does diffuse lighting.
+//          
+////////////////////////////////////////////////////////////////////////////
+
+//
+// Global variables we use to hold the view matrix, projection matrix,
+// ambient material, diffuse material, and the light vector that describes
+// the direction to the light source.  These variables are initialized from
+// the application.
+//
+
+matrix ViewMatrix;
+matrix ViewProjMatrix;
+
+vector AmbientMtrl;
+vector DiffuseMtrl;
+
+vector LightDirection;
+vector PlayerPos;
+vector SelPos;
+vector TorchPos[20];
+
+int TorchNum;
+
+float TerrainMappingU[20];
+float TerrainMappingV[20];
+
+
+//
+// Global variables used to hold the ambient light intensity (ambient
+// light the light source emits) and the diffuse light intensity (diffuse
+// light the light source emits).  These variables are initialized here
+// in the shader.
+//
+
+vector DiffuseLightIntensity = {0.6f, 0.6f, 0.6f, 0.6f};
+vector AmbientLightIntensity = {0.3f, 0.3f, 0.3f, 0.3f};
+
+//
+// Input and Output structures.
+//
+
+struct VS_INPUT
+{
+    vector position : POSITION;
+    vector normal   : NORMAL;
+    vector tex0       : TEXCOORD0;
+    vector inst        :TEXCOORD1;
+};
+
+struct VS_OUTPUT
+{
+    vector position : POSITION;
+    vector diffuse  : COLOR;
+    vector tex0     : TEXCOORD0;
+    float fog : FOG;
+};
+
+//
+// Main
+//
+
+VS_OUTPUT Main(VS_INPUT input)
+{
+    // zero out all members of the output instance.
+    VS_OUTPUT output = (VS_OUTPUT)0;
+    vector LightDir = LightDirection;
+    float offsetU = 0;
+    float offsetV = 0;
+    input.position.w = 1 ;
+    float shadowed = 1;
+    int type = (int)input.inst.w; 
+    if(type >=32)
+    {
+         type -= 32; 
+        shadowed = 0;
+    }
+
+
+
+    //
+    // Transform position to homogeneous clip space
+    // and store in the output.position member. 
+    //
+//
+   
+    input.position.x = input.position.x + input.inst.x + 0.5;
+    input.position.y = input.position.y + input.inst.y + 0.5;
+    input.position.z = input.position.z + input.inst.z + 0.5;
+//线性雾化
+    //float dist = distance(input.position, PlayerPos) ;
+   //output.fog = (50 - dist) / 40;
+//指数雾化
+    output.fog = rcp(exp(distance(input.position, PlayerPos) * 0.03));
+    output.position = mul(input.position, ViewProjMatrix);
+
+    if(input.normal.y == 1 && type == 9)
+    { 
+             offsetU = TerrainMappingU[type+2];
+             offsetV = TerrainMappingV[type+2];
+    }
+    else if(input.normal.y == -1 && type == 9)
+    { 
+              offsetU = TerrainMappingU[type+1];
+             offsetV = TerrainMappingV[type+1];
+    }
+    else if(input.normal.y == 1 && type == 12)
+    { 
+             offsetU = TerrainMappingU[type+1];
+             offsetV = TerrainMappingV[type+1];
+    }
+    else if(input.normal.y == -1 && type == 12)
+    {
+             offsetU = TerrainMappingU[type+1];
+             offsetV = TerrainMappingV[type+1];
+    }
+    else
+    {
+             offsetU = TerrainMappingU[type];
+             offsetV = TerrainMappingV[type];
+    }
+
+    
+   output.tex0.x = input.tex0.x + offsetU;
+    output.tex0.y = input.tex0.y + offsetV;
+//output.tex0 = input.tex0*3;
+
+
+    //
+    // Transform lights and normals to view space.  Set w
+    // componentes to zero since we're transforming vectors 
+    // here and not points.
+    //
+    LightDir.w = 0.0f;
+    input.normal.w   = 0.0f;
+    LightDir   = mul(LightDir, ViewMatrix);
+    input.normal     = mul(input.normal,   ViewMatrix);
+
+    //
+    // Compute cosine of the angle between light and normal.
+    //
+    float s = dot(LightDir, input.normal);
+
+    //
+    // Recall that if the angle between the surface and light
+    // is greater than 90 degrees the surface recieves no light.
+    // Thus, if the angle is greater than 90 degrees we set
+    // s to zero so that the surface will not be lit.
+    //
+    if( s < 0.0f )
+        s = 0.0f;
+
+    //
+    // Ambient light reflected is computed by performing a 
+    // component wise multiplication with the ambient material
+    // vector and the ambient light intensity vector.
+    //
+    // Diffuse light reflected is computed by performing a 
+    // component wise multiplication with the diffuse material
+    // vector and the diffuse light intensity vector.  Further
+    // we scale each component by the shading scalar s, which
+    // shades the color based on how much light the vertex received
+    // from the light source.
+    //
+    // The sum of both the ambient and diffuse components gives
+    // us our final vertex color.
+    // 
+    float p = 0;
+    float dist = 0;
+    float ps = 0;
+    vector pDir; 
+    for(int i = 0; i < TorchNum; i++)
+    {
+         dist = distance(TorchPos[i], input.position);
+         vector pDir = TorchPos[i] - input.position;
+         pDir = mul(pDir,   ViewMatrix);
+         ps = dot( pDir,input.normal);
+         if(dist > 5)
+         {p += 0;}
+         else
+         {	
+	if( ps < 0 )
+        	{p += 0;}
+	else
+	{p += (5 - dist) / 5;}
+          }
+    }
+    output.diffuse = (AmbientMtrl * AmbientLightIntensity) +
+                    ((s*shadowed+p) *(DiffuseLightIntensity * DiffuseMtrl));
+    if(input.inst.x == SelPos.x && input.inst.y == SelPos.y && input.inst.z == SelPos.z)
+    {
+        output.diffuse *= 1.5;
+    }
+    if(type == 14)
+    {output.diffuse += 1;}
+
+    return output;
+}
+
+
+
+
+
