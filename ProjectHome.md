@@ -1,0 +1,1 @@
+A 3D game imitating Minecraft. Simple static terrain generating algorithm. Use instancing technique to save the memory. support crafting function. left click to dig and right click to build.
